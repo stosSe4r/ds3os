@@ -327,9 +327,10 @@ void Server::PollServerAdvertisement()
     }
     if constexpr (!BuildConfig::SEND_MESSAGE_TO_PLAYERS_SANITY_CHECKS || !BuildConfig::NRSSR_SANITY_CHECKS)
     {
-        Warning("Security fixes for RequestSendMessageToPlayers or the NRSSR RCE exploit are disabled. As such, the server will not be listed publicly.");
-        Config.Advertise = false;
-        return;
+        //Warning("Security fixes for RequestSendMessageToPlayers or the NRSSR RCE exploit are disabled. As such, the server will not be listed publicly.");
+        //Config.Advertise = false;
+        Warning("Security fixes are disabled. Still, we will announce the server with fake IP.");
+        //return;
     }
 
     // Waiting for current advertisement to finish.
@@ -351,17 +352,32 @@ void Server::PollServerAdvertisement()
     // Is it time to kick off a new one?
     else if (GetSeconds() - LastMasterServerUpdate > Config.AdvertiseHearbeatTime)
     {
+        std::fstream fakePlayerCountStream;
+        fakePlayerCountStream.open("extraplayercount.txt");
+        if (!fakePlayerCountStream) {
+            Warning("Fake extra player count txt does not exist. Please create a txt with name 'extraplayercount.txt' at the same dir and give data.");
+            LastMasterServerUpdate = GetSeconds();
+            return;
+        }
+        int extrafakecount = 0; fakePlayerCountStream >> extrafakecount;
+        if (extrafakecount <= 0) {
+            Warning("Fake extra player count txt has no or wrong data.");
+            LastMasterServerUpdate = GetSeconds();
+            return;
+        }
+        fakePlayerCountStream.close();
+        Warning("Advertising server with fake player count: %d(real) + %d(fake).", (int)GetService<GameService>()->GetClients().size(), extrafakecount);
         nlohmann::json Body;
         Body["Hostname"] = Config.ServerHostname.length() > 0 ? Config.ServerHostname : PublicIP.ToString();
         Body["PrivateHostname"] = Config.ServerPrivateHostname.length() > 0 ? Config.ServerPrivateHostname : PrivateIP.ToString();
         Body["Description"] = Config.ServerDescription;
         Body["Name"] = Config.ServerName;
         Body["PublicKey"] = PrimaryKeyPair.GetPublicString();
-        Body["PlayerCount"] = (int)GetService<GameService>()->GetClients().size();
+        Body["PlayerCount"] = (int)GetService<GameService>()->GetClients().size() + extrafakecount;
         Body["Password"] = Config.Password;
         Body["ModsWhiteList"] = Config.ModsWhitelist;
         Body["ModsBlackList"] = Config.ModsBlacklist;
-        Body["ModsRequiredList"] = Config.ModsRequiredList;        
+        Body["ModsRequiredList"] = Config.ModsRequiredList;
         Body["ServerVersion"] = BuildConfig::MASTER_SERVER_CLIENT_VERSION;
 
         MasterServerUpdateRequest = std::make_shared<NetHttpRequest>();
